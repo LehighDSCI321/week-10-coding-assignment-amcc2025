@@ -1,126 +1,145 @@
-# pylint: disable=C
-
-"""Graph module defining SortableDigraph, TraversableDigraph, and DAG classes."""
+"""Module for graph data structures including traversable directed graphs and DAGs"""
+from collections import deque
 
 class SortableDigraph:
-    """A directed graph that supports topological sorting."""
-
-    def _init_(self):
-        """Initialize adjacency and node value dictionaries."""
-        self.adj = {}
+    """Base class for a sortable directed graph."""
+    def __init__(self):
+        """Initialize an empty directed graph."""
+        self.graph = {}
         self.node_values = {}
+        self.edge_weights = {}
 
     def add_node(self, node, value=None):
-        """Add a node with an optional value."""
-        if node not in self.adj:
-            self.adj[node] = {}
+        """Add a node to the graph."""
+        if node not in self.graph:
+            self.graph[node] = []
         if value is not None:
             self.node_values[node] = value
 
-    def add_edge(self, start, end, edge_weight=1):
-        """Add a directed edge with optional weight."""
-        if start not in self.adj:
+    def add_edge(self, start, end, edge_weight=None):
+        """Add a directed edge from start to end."""
+        if start not in self.graph:
             self.add_node(start)
-        if end not in self.adj:
+        if end not in self.graph:
             self.add_node(end)
-        self.adj[start][end] = edge_weight
+        if end not in self.graph[start]:
+            self.graph[start].append(end)
+        if edge_weight is not None:
+            self.edge_weights[(start, end)] = edge_weight
 
-    def get_nodes(self):
-        """Return all nodes in the graph."""
-        return list(self.adj.keys())
+    def __contains__(self, node):
+        """Check if a node exists in the graph."""
+        return node in self.graph
 
-    def get_node_value(self, node):
-        """Return the stored value for a given node."""
-        return self.node_values.get(node)
+    def __getitem__(self, node):
+        """Get the neighbors of a node."""
+        return self.graph.get(node, [])
 
     def get_edge_weight(self, start, end):
-        """Return the weight of an edge."""
-        return self.adj[start][end]
+        """Get the weight of an edge from start to end."""
+        return self.edge_weights.get((start, end))
 
     def successors(self, node):
-        """Return the direct successors of a node."""
-        return list(self.adj.get(node, {}).keys())
+        """Get the list of successor nodes"""
+        return self.graph.get(node, [])
 
     def predecessors(self, node):
-        """Return the direct predecessors of a node."""
+        """Get the list of predecessor nodes"""
         preds = []
-        for source, nbrs in self.adj.items():
-            if node in nbrs:
-                preds.append(source)
+        for n, neighbors in self.graph.items():
+            if node in neighbors:
+                preds.append(n)
         return preds
 
-    def top_sort(self):
-        """Return nodes in topological order using Kahn’s algorithm."""
-        indegree = {node: 0 for node in self.adj}
-        for source in self.adj:
-            for target in self.adj[source]:
-                indegree[target] = indegree.get(target, 0) + 1
-
-        # Use list as queue to avoid imports
-        queue = [node for node, deg in indegree.items() if deg == 0]
-        order = []
-
-        while queue:
-            node = queue.pop(0)  # pop(0) acts like deque.popleft()
-            order.append(node)
-            for neighbor in self.adj.get(node, {}):
-                indegree[neighbor] -= 1
-                if indegree[neighbor] == 0:
-                    queue.append(neighbor)
-
-        if len(order) != len(self.adj):
-            raise ValueError("Graph contains a cycle; topological sort invalid.")
-        return order
-
-
 class TraversableDigraph(SortableDigraph):
-    """A directed graph supporting DFS and BFS traversal."""
+    """Augments SortableDigraph with traversal methods"""
 
     def dfs(self, start):
-        """Yield nodes reachable from start using depth-first search."""
+        """Perform depth-first search traversal from the start node"""
         visited = set()
         stack = [start]
-        visited.add(start)
+
         while stack:
             node = stack.pop()
-            for neighbor in self.adj.get(node, {}):
+            if node in visited:
+                continue
+            visited.add(node)
+            if node != start:
+                yield node
+
+            # Add neighbors to stack
+            neighbors = self[node]
+            for neighbor in reversed(neighbors):
                 if neighbor not in visited:
-                    visited.add(neighbor)
-                    yield neighbor
                     stack.append(neighbor)
 
     def bfs(self, start):
-        """Yield nodes reachable from start using breadth-first search."""
-        visited = {start}
-        queue = [start]
-        while queue:
-            node = queue.pop(0)
-            for neighbor in self.adj.get(node, {}):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    queue.append(neighbor)
-                    yield neighbor
+        """Perform breadth-first search traversal from the start node"""
+        visited = set()
+        queue = deque([start])
 
+        while queue:
+            node = queue.popleft()
+            if node in visited:
+                continue
+            visited.add(node)
+            if node != start:
+                yield node
+
+            for neighbor in self[node]:
+                if neighbor not in visited:
+                    queue.append(neighbor)
 
 class DAG(TraversableDigraph):
-    """A directed acyclic graph preventing cycles on edge addition."""
+    """Directed Acyclic Graph - inherits from TraversableDigraph"""
 
-    def add_edge(self, start, end, edge_weight=1):
-        """Add a directed edge if it does not introduce a cycle."""
-        if self._reachable(end, start):
-            raise ValueError(f"Adding edge {start} → {end} would create a cycle.")
+    def add_edge(self, start, end, edge_weight=None):
+        """Add an edge from start to end, but only if it doesn't create a cycle"""
+
+        if start not in self:
+            self.add_node(start)
+        if end not in self:
+            self.add_node(end)
+
+        if self._has_path(end, start):
+            raise ValueError(
+                f"Cannot add edge from '{start}' to '{end}': "
+                f"would create a cycle (path already exists from "
+                f"'{end}' to '{start}')"
+            )
+
         super().add_edge(start, end, edge_weight)
 
-    def _reachable(self, start, target):
-        """Return True if target is reachable from start."""
-        visited = set()
-        stack = [start]
-        while stack:
-            node = stack.pop()
+    def _has_path(self, start, target):
+        """Check if there's a path from start to target"""
+
+        if start not in self:
+            return False
+
+        # Use BFS to search for target
+        for node in self.bfs(start):
             if node == target:
                 return True
-            for neighbor in self.adj.get(node, {}):
-                if neighbor not in visited:
-                    visited.add(neighbor)
-                    stack.append(neighbor)
         return False
+
+    def top_sort(self):
+        """Perform topological sort on the DAG"""
+
+        in_degree = {node: 0 for node in self.graph}
+        for node, neighbors in self.graph.items():
+            for neighbor in neighbors:
+                in_degree[neighbor] += 1
+
+        queue = deque([node for node in self.graph if in_degree[node] == 0])
+        result = []
+
+        while queue:
+            node = queue.popleft()
+            result.append(node)
+
+            for neighbor in self.graph[node]:
+                in_degree[neighbor] -= 1
+                if in_degree[neighbor] == 0:
+                    queue.append(neighbor)
+
+        return result

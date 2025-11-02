@@ -1,11 +1,7 @@
 import subprocess
 import re
-import pytest
 
-from student_code import TraversableDigraph
-
-def test_add_node():
-    graph = TraversableDigraph()
-    graph.add_node("A", 10)
-    assert "A" in graph.get_nodes()
-    assert graph.get_node_value("A") == 10
+# Test 3: Check for unhandled pylint style recommendations
+def test_pylint_style():
+    result = subprocess.run(['pylint', 'student_code.py'], capture_output=True, text=True)
+    assert "C0" not in result.stdout, "Pylint style recommendations found"
